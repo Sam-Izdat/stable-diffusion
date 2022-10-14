@@ -6,6 +6,13 @@ This is a Stable Diffusion fork for the PainBucket backend and taskrunner, based
 - [neonsecret](https://github.com/neonsecret/stable-diffusion)
 - [basujindal](https://github.com/basujindal/stable-diffusion)
 
+Specifically:
+
+- automatic memory management
+- support for seamless tiling
+- support for multiple samplers
+- individually-reproducible seeds for batches
+- weighted prompts
 
 # Stable Diffusion
 *Stable Diffusion was made possible thanks to a collaboration with [Stability AI](https://stability.ai/) and [Runway](https://runwayml.com/) and builds upon our previous work:*
