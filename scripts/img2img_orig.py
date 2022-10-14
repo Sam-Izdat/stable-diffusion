@@ -1,7 +1,6 @@
 """make variations of input image"""
 
 import argparse, os, sys, glob
-sys.path.append(os.getcwd())
 import PIL
 import torch
 import numpy as np
@@ -20,7 +19,6 @@ from ldm.util import instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.models.diffusion.plms import PLMSSampler
 
-from doggettx_split_subprompts import split_weighted_subprompts
 
 def chunk(it, size):
     it = iter(it)
@@ -194,33 +192,16 @@ def main():
         choices=["full", "autocast"],
         default="autocast"
     )
-    parser.add_argument(
-        "--tiling",
-        help="seamless tiling",
-        action="store_true"
-    )
 
     opt = parser.parse_args()
-
-    # add global options to models
-    def patch_conv(**patch):
-        cls = torch.nn.Conv2d
-        init = cls.__init__
-        def __init__(self, *args, **kwargs):
-            return init(self, *args, **kwargs, **patch)
-        cls.__init__ = __init__
-
-    if opt.tiling:
-        patch_conv(padding_mode='circular')
-        print("patched for tiling")
-
-        
     seed_everything(opt.seed)
 
-        
-
+    # needed when model is in half mode, remove if not using half mode
+    torch.set_default_tensor_type(torch.HalfTensor)
+    
     config = OmegaConf.load(f"{opt.config}")
     model = load_model_from_config(config, f"{opt.ckpt}")
+    model = model.half()
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     model = model.to(device)
@@ -277,17 +258,6 @@ def main():
                         if isinstance(prompts, tuple):
                             prompts = list(prompts)
                         c = model.get_learned_conditioning(prompts)
-
-                        subprompts,weights = split_weighted_subprompts(prompts[0])
-                        if len(subprompts) > 1:
-                            c = torch.zeros_like(uc)
-                            totalWeight = sum(weights)
-                            # normalize each "sub prompt" and add it
-                            for i in range(len(subprompts)):
-                                weight = weights[i]
-                                # if not skip_normalize:
-                                weight = weight / totalWeight
-                                c = torch.add(c,model.get_learned_conditioning(subprompts[i]), alpha=weight)
 
                         # encode (scaled latent)
                         z_enc = sampler.stochastic_encode(init_latent, torch.tensor([t_enc]*batch_size).to(device))

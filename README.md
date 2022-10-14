@@ -1,8 +1,10 @@
-# Automatic memory management
+# About
 
-This version can be run stand alone, but it's more meant as proof of concept so other forks can implement similar changes.
+This is a Stable Diffusion fork for the PainBucket backend and taskrunner, based on cherry-picked features from multiple other forks, including:
 
-Allows to use resolutions that require up to 64x more VRAM than possible on the default CompVis build
+- [Doggettx](https://github.com/Doggettx/stable-diffusion)
+- [neonsecret](https://github.com/neonsecret/stable-diffusion)
+- [basujindal](https://github.com/basujindal/stable-diffusion)
 
 
 # Stable Diffusion

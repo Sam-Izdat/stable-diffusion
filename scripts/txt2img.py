@@ -1,11 +1,12 @@
 import argparse, os, sys, glob
+sys.path.append(os.getcwd())
 import cv2
 import torch
 import numpy as np
 from omegaconf import OmegaConf
 from PIL import Image
 from tqdm import tqdm, trange
-from imwatermark import WatermarkEncoder
+#from imwatermark import WatermarkEncoder
 from itertools import islice
 from einops import rearrange
 from torchvision.utils import make_grid
@@ -18,14 +19,15 @@ from ldm.util import instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.models.diffusion.plms import PLMSSampler
 
-from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
+# from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 from transformers import AutoFeatureExtractor
 
+from doggettx_split_subprompts import split_weighted_subprompts
 
 # load safety model
-safety_model_id = "CompVis/stable-diffusion-safety-checker"
-safety_feature_extractor = AutoFeatureExtractor.from_pretrained(safety_model_id)
-safety_checker = StableDiffusionSafetyChecker.from_pretrained(safety_model_id)
+# safety_model_id = "CompVis/stable-diffusion-safety-checker"
+# safety_feature_extractor = AutoFeatureExtractor.from_pretrained(safety_model_id)
+# safety_checker = StableDiffusionSafetyChecker.from_pretrained(safety_model_id)
 
 
 def chunk(it, size):
@@ -65,12 +67,12 @@ def load_model_from_config(config, ckpt, verbose=False):
     return model
 
 
-def put_watermark(img, wm_encoder=None):
-    if wm_encoder is not None:
-        img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-        img = wm_encoder.encode(img, 'dwtDct')
-        img = Image.fromarray(img[:, :, ::-1])
-    return img
+# def put_watermark(img, wm_encoder=None):
+#     if wm_encoder is not None:
+#         img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+#         img = wm_encoder.encode(img, 'dwtDct')
+#         img = Image.fromarray(img[:, :, ::-1])
+#     return img
 
 
 def load_replacement(x):
@@ -84,14 +86,14 @@ def load_replacement(x):
         return x
 
 
-def check_safety(x_image):
-    safety_checker_input = safety_feature_extractor(numpy_to_pil(x_image), return_tensors="pt")
-    x_checked_image, has_nsfw_concept = safety_checker(images=x_image, clip_input=safety_checker_input.pixel_values)
-    assert x_checked_image.shape[0] == len(has_nsfw_concept)
-    for i in range(len(has_nsfw_concept)):
-        if has_nsfw_concept[i]:
-            x_checked_image[i] = load_replacement(x_checked_image[i])
-    return x_checked_image, has_nsfw_concept
+# def check_safety(x_image):
+#     safety_checker_input = safety_feature_extractor(numpy_to_pil(x_image), return_tensors="pt")
+#     x_checked_image, has_nsfw_concept = safety_checker(images=x_image, clip_input=safety_checker_input.pixel_values)
+#     assert x_checked_image.shape[0] == len(has_nsfw_concept)
+#     for i in range(len(has_nsfw_concept)):
+#         if has_nsfw_concept[i]:
+#             x_checked_image[i] = load_replacement(x_checked_image[i])
+#     return x_checked_image, has_nsfw_concept
 
 
 def main():
@@ -226,7 +228,27 @@ def main():
         choices=["full", "autocast"],
         default="autocast"
     )
+    parser.add_argument(
+        "--tiling",
+        help="seamless tiling",
+        action="store_true"
+    )
     opt = parser.parse_args()
+
+
+
+    # add global options to models
+    def patch_conv(**patch):
+        cls = torch.nn.Conv2d
+        init = cls.__init__
+        def __init__(self, *args, **kwargs):
+            return init(self, *args, **kwargs, **patch)
+        cls.__init__ = __init__
+
+    if opt.tiling:
+        patch_conv(padding_mode='circular')
+        print("patched for tiling")
+        
 
     if opt.laion400m:
         print("Falling back to LAION 400M model...")
@@ -234,14 +256,12 @@ def main():
         opt.ckpt = "models/ldm/text2img-large/model.ckpt"
         opt.outdir = "outputs/txt2img-samples-laion400m"
 
-    seed_everything(opt.seed)
-
-    # needed when model is in half mode, remove if not using half mode
-    torch.set_default_tensor_type(torch.HalfTensor)
+    seed = opt.seed
+    seed_everything(seed)
+    # torch.manual_seed(opt.seed)
 
     config = OmegaConf.load(f"{opt.config}")
     model = load_model_from_config(config, f"{opt.ckpt}")
-    model = model.half()
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     model = model.to(device)
@@ -254,10 +274,10 @@ def main():
     os.makedirs(opt.outdir, exist_ok=True)
     outpath = opt.outdir
 
-    print("Creating invisible watermark encoder (see https://github.com/ShieldMnt/invisible-watermark)...")
-    wm = "StableDiffusionV1"
-    wm_encoder = WatermarkEncoder()
-    wm_encoder.set_watermark('bytes', wm.encode('utf-8'))
+    # print("Creating invisible watermark encoder (see https://github.com/ShieldMnt/invisible-watermark)...")
+    # wm = "StableDiffusionV1"
+    # wm_encoder = WatermarkEncoder()
+    # wm_encoder.set_watermark('bytes', wm.encode('utf-8'))
 
     batch_size = opt.n_samples
     n_rows = opt.n_rows if opt.n_rows > 0 else batch_size
@@ -295,6 +315,18 @@ def main():
                         if isinstance(prompts, tuple):
                             prompts = list(prompts)
                         c = model.get_learned_conditioning(prompts)
+                        subprompts,weights = split_weighted_subprompts(prompts[0])
+                        if len(subprompts) > 1:
+                            c = torch.zeros_like(uc)
+                            totalWeight = sum(weights)
+                            # normalize each "sub prompt" and add it
+                            for i in range(len(subprompts)):
+                                weight = weights[i]
+                                # if not skip_normalize:
+                                weight = weight / totalWeight
+                                c = torch.add(c,model.get_learned_conditioning(subprompts[i]), alpha=weight)
+                        else:
+                            c = model.get_learned_conditioning(prompts)
                         shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
                         samples_ddim, _ = sampler.sample(S=opt.ddim_steps,
                                                          conditioning=c,
@@ -310,21 +342,28 @@ def main():
                         x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
                         x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).numpy()
 
-                        x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
+                        x_checked_image = x_samples_ddim
+                        # x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
 
                         x_checked_image_torch = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
 
                         if not opt.skip_save:
                             for x_sample in x_checked_image_torch:
+                                print("======================")
+                                print(torch.seed())
+                                print("======================")
+                                # seed += 1
+                                # torch.manual_seed(seed)
+                                # torch.cuda.manual_seed(seed)
+                                # np.random.seed(seed)
+
                                 x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
                                 img = Image.fromarray(x_sample.astype(np.uint8))
-                                img = put_watermark(img, wm_encoder)
+                                # img = put_watermark(img, wm_encoder)
                                 img.save(os.path.join(sample_path, f"{base_count:05}.png"))
                                 base_count += 1
-
                         if not opt.skip_grid:
                             all_samples.append(x_checked_image_torch)
-
                 if not opt.skip_grid:
                     # additionally, save as grid
                     grid = torch.stack(all_samples, 0)
@@ -334,7 +373,7 @@ def main():
                     # to image
                     grid = 255. * rearrange(grid, 'c h w -> h w c').cpu().numpy()
                     img = Image.fromarray(grid.astype(np.uint8))
-                    img = put_watermark(img, wm_encoder)
+                    # img = put_watermark(img, wm_encoder)
                     img.save(os.path.join(outpath, f'grid-{grid_count:04}.png'))
                     grid_count += 1
 
