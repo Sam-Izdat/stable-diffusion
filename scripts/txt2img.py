@@ -356,7 +356,7 @@ def main():
     if opt.fixed_code:
         start_code = torch.randn([opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
 
-    precision_scope = autocast if opt.precision=="autocast" else nullcontext
+    precision_scope = autocast if opt.precision == "autocast" and opt.device != "cpu" else nullcontext
 
     seeds = ""
     with torch.no_grad():
@@ -364,11 +364,6 @@ def main():
         all_samples = list()
         for n in trange(opt.n_iter, desc="Sampling"):
             for prompts in tqdm(data, desc="data"):
-
-                sample_path = os.path.join(outpath, "_".join(re.split(":| ", prompts[0])))[:150]
-                os.makedirs(sample_path, exist_ok=True)
-                base_count = len(os.listdir(sample_path))
-
                 with precision_scope("cuda"):
                     modelCS.to(opt.device)
                     uc = None

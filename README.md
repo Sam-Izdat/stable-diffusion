@@ -13,6 +13,7 @@ Specifically:
 - support for multiple samplers
 - individually-reproducible seeds for batches
 - weighted prompts
+- inpainting and outpainting
 
 # Stable Diffusion
 *Stable Diffusion was made possible thanks to a collaboration with [Stability AI](https://stability.ai/) and [Runway](https://runwayml.com/) and builds upon our previous work:*

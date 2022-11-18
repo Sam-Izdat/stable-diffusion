@@ -20,7 +20,7 @@ from ldm.util import instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.models.diffusion.plms import PLMSSampler
 
-from doggettx_split_subprompts import split_weighted_subprompts
+from split_subprompts import split_weighted_subprompts
 
 def chunk(it, size):
     it = iter(it)

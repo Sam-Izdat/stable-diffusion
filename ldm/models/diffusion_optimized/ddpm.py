@@ -22,7 +22,7 @@ from ldm.util import exists, default, instantiate_from_config
 from ldm.modules.diffusionmodules.util import make_beta_schedule
 from ldm.modules.diffusionmodules.util import make_ddim_sampling_parameters, make_ddim_timesteps, noise_like
 from ldm.modules.diffusionmodules.util import make_beta_schedule, extract_into_tensor, noise_like
-from ldm.models.diffusion_optimized.samplers import CompVisDenoiser, get_ancestral_step, to_d, append_dims,linear_multistep_coeff
+from ldm.models.diffusion_optimized.samplers import CompVisDenoiser, get_ancestral_step, to_d, append_dims, linear_multistep_coeff
 
 def disabled_train(self):
     """Overwrite model.train with this function to make sure train/eval mode
@@ -526,6 +526,7 @@ class UNet(DDPM):
                                         )
 
         elif sampler == "ddim":
+            self.make_schedule(ddim_num_steps=S, ddim_eta=eta, verbose=False)
             samples = self.ddim_sampling(x_latent, conditioning, S, unconditional_guidance_scale=unconditional_guidance_scale,
                                          unconditional_conditioning=unconditional_conditioning,
                                          mask = mask,init_latent=x_T,use_original_steps=False)
@@ -540,18 +541,22 @@ class UNet(DDPM):
                                         unconditional_guidance_scale=unconditional_guidance_scale)
 
         elif sampler == "dpm2":
+            self.make_schedule(ddim_num_steps=S, ddim_eta=eta, verbose=False)
             samples = self.dpm_2_sampling(self.alphas_cumprod,x_latent, S, conditioning, unconditional_conditioning=unconditional_conditioning,
                                         unconditional_guidance_scale=unconditional_guidance_scale)
         elif sampler == "heun":
+            self.make_schedule(ddim_num_steps=S, ddim_eta=eta, verbose=False)
             samples = self.heun_sampling(self.alphas_cumprod,x_latent, S, conditioning, unconditional_conditioning=unconditional_conditioning,
                                         unconditional_guidance_scale=unconditional_guidance_scale)
 
         elif sampler == "dpm2_a":
+            self.make_schedule(ddim_num_steps=S, ddim_eta=eta, verbose=False)
             samples = self.dpm_2_ancestral_sampling(self.alphas_cumprod,x_latent, S, conditioning, unconditional_conditioning=unconditional_conditioning,
                                         unconditional_guidance_scale=unconditional_guidance_scale)
 
 
         elif sampler == "lms":
+            self.make_schedule(ddim_num_steps=S, ddim_eta=eta, verbose=False)
             samples = self.lms_sampling(self.alphas_cumprod,x_latent, S, conditioning, unconditional_conditioning=unconditional_conditioning,
                                         unconditional_guidance_scale=unconditional_guidance_scale)
 
